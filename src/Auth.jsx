@@ -1,84 +1,128 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { supabase } from "./supabase"
 import { useNavigate } from "react-router-dom"
+
+// Toast component
+function Toast({ message, type, onClose }) {
+  if (!message) return null
+  return (
+    <div
+      className={`fixed top-5 right-5 px-4 py-2 rounded shadow text-white transition-opacity z-50 ${
+        type === "success" ? "bg-green-500" : "bg-red-500"
+      }`}
+    >
+      {message}
+      <span
+        className="ml-2 cursor-pointer font-bold"
+        onClick={onClose}
+      >
+        ×
+      </span>
+    </div>
+  )
+}
 
 export default function Auth() {
   const navigate = useNavigate()
 
   const [name, setName] = useState("")
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
+  const [email, setEmail] = useState(localStorage.getItem("savedEmail") || "")
+  const [password, setPassword] = useState(localStorage.getItem("savedPassword") || "")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [isLogin, setIsLogin] = useState(true)
-  const [error, setError] = useState("")
-  const [success, setSuccess] = useState("")
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [rememberMe, setRememberMe] = useState(localStorage.getItem("rememberMe") === "true")
+  const [toast, setToast] = useState({ message: "", type: "success" })
 
-  const validateEmail = (email) =>
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+  const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+  const validatePassword = (password) => password.length >= 6
 
-  const validatePassword = (password) =>
-    password.length >= 6
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession()
+      if (data?.session) navigate("/dashboard")
+    }
+    checkSession()
+  }, [navigate])
+
+  const showToast = (message, type = "success") => {
+    setToast({ message, type })
+    setTimeout(() => setToast({ message: "", type }), 4000)
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setError("")
-    setSuccess("")
     setLoading(true)
 
     if (!validateEmail(email)) {
-      setError("Invalid email format")
+      showToast("Invalid email format", "error")
       setLoading(false)
       return
     }
 
     if (!validatePassword(password)) {
-      setError("Password must be at least 6 characters")
+      showToast("Password must be at least 6 characters", "error")
       setLoading(false)
       return
     }
 
     if (!isLogin) {
+      // SIGNUP FLOW
       if (!name.trim()) {
-        setError("Name is required")
+        showToast("Name is required", "error")
         setLoading(false)
         return
       }
-
       if (password !== confirmPassword) {
-        setError("Passwords do not match")
+        showToast("Passwords do not match", "error")
         setLoading(false)
         return
       }
-    }
 
-    let response
-
-    if (isLogin) {
-      response = await supabase.auth.signInWithPassword({
+      const { data, error: signupError } = await supabase.auth.signUp({
         email,
         password,
+        options: { data: { full_name: name } },
       })
+
+      if (signupError) {
+        if (signupError.code === "over_email_send_rate_limit") {
+          showToast("Too many signup requests. Please try again later.", "error")
+        } else if (signupError.message.includes("already registered")) {
+          showToast("Email already exists. Please login.", "error")
+        } else {
+          showToast(signupError.message, "error")
+        }
+      } else {
+        // If confirmation email was sent, treat as existing email
+        if (data?.user?.confirmation_sent_at) {
+          showToast("Email already exists. Please login.", "error")
+        } else {
+          showToast("Signup successful! You can login now.", "success")
+        }
+      }
     } else {
-      response = await supabase.auth.signUp({
+      // LOGIN FLOW
+      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
         email,
         password,
-        options: {
-          data: {
-            full_name: name,
-          },
-        },
+        options: { persistSession: rememberMe },
       })
-    }
 
-    if (response.error) {
-      setError(response.error.message)
-    } else {
-      if (isLogin) {
+      if (!loginError) {
+        if (rememberMe) {
+          localStorage.setItem("savedEmail", email)
+          localStorage.setItem("savedPassword", password)
+          localStorage.setItem("rememberMe", rememberMe)
+        } else {
+          localStorage.removeItem("savedEmail")
+          localStorage.removeItem("savedPassword")
+          localStorage.removeItem("rememberMe")
+        }
         navigate("/dashboard")
       } else {
-        setSuccess("Signup successful! You can login now.")
+        showToast(loginError.message, "error")
       }
     }
 
@@ -87,28 +131,30 @@ export default function Auth() {
 
   const handleForgotPassword = async () => {
     if (!validateEmail(email)) {
-      setError("Enter valid email to reset password")
+      showToast("Enter valid email to reset password", "error")
       return
     }
 
     const { error } = await supabase.auth.resetPasswordForEmail(email)
-
     if (error) {
-      setError(error.message)
+      if (error.code === "over_email_send_rate_limit") {
+        showToast("Too many password reset requests. Please try again later.", "error")
+      } else {
+        showToast(error.message, "error")
+      }
     } else {
-      setSuccess("Password reset email sent!")
+      showToast("Password reset email sent!", "success")
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="bg-white p-8 rounded-2xl shadow-xl w-96">
-        <h2 className="text-2xl font-bold mb-6 text-center">
-          {isLogin ? "Login" : "Signup"}
-        </h2>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-r from-blue-100 to-pink-100">
+      <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: "", type: "success" })} />
+
+      <div className="bg-white p-8 rounded-3xl shadow-2xl w-96">
+        <h2 className="text-2xl font-bold mb-6 text-center">{isLogin ? "Login" : "Signup"}</h2>
 
         <form onSubmit={handleSubmit}>
-
           {!isLogin && (
             <input
               type="text"
@@ -154,6 +200,21 @@ export default function Auth() {
           )}
 
           {isLogin && (
+            <div className="flex items-center mb-4">
+              <input
+                type="checkbox"
+                id="rememberMe"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="mr-2"
+              />
+              <label htmlFor="rememberMe" className="text-sm text-gray-700">
+                Remember Me
+              </label>
+            </div>
+          )}
+
+          {isLogin && (
             <div
               className="text-sm text-blue-500 cursor-pointer mb-4"
               onClick={handleForgotPassword}
@@ -162,24 +223,12 @@ export default function Auth() {
             </div>
           )}
 
-          {error && (
-            <div className="text-red-500 mb-2 text-sm">{error}</div>
-          )}
-
-          {success && (
-            <div className="text-green-500 mb-2 text-sm">{success}</div>
-          )}
-
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+            className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition-colors"
           >
-            {loading
-              ? "Please wait..."
-              : isLogin
-              ? "Login"
-              : "Signup"}
+            {loading ? "Please wait..." : isLogin ? "Login" : "Signup"}
           </button>
         </form>
 
@@ -187,8 +236,7 @@ export default function Auth() {
           className="text-center mt-4 text-blue-500 cursor-pointer"
           onClick={() => {
             setIsLogin(!isLogin)
-            setError("")
-            setSuccess("")
+            setToast({ message: "", type: "success" })
           }}
         >
           Switch to {isLogin ? "Signup" : "Login"}
