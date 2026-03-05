@@ -11,10 +11,7 @@ function Toast({ message, type, onClose }) {
       }`}
     >
       {message}
-      <span
-        className="ml-2 cursor-pointer font-bold"
-        onClick={onClose}
-      >
+      <span className="ml-2 cursor-pointer font-bold" onClick={onClose}>
         ×
       </span>
     </div>
@@ -34,16 +31,10 @@ export default function Auth() {
   const [rememberMe, setRememberMe] = useState(localStorage.getItem("rememberMe") === "true")
   const [toast, setToast] = useState({ message: "", type: "success" })
 
-  const validateEmail = (email) =>
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-
-  const validatePassword = (password) =>
-    password.length >= 6
-
   useEffect(() => {
     const checkSession = async () => {
       const { data } = await supabase.auth.getSession()
-      if (data?.session) navigate("/dashboard")
+      if (data?.session) navigate("/app") // ✅ FIXED
     }
     checkSession()
   }, [navigate])
@@ -59,20 +50,14 @@ export default function Auth() {
     e.preventDefault()
     setLoading(true)
 
-    if (!validateEmail(email)) {
-      showToast("Invalid email format", "error")
-      setLoading(false)
-      return
-    }
-
-    if (!validatePassword(password)) {
-      showToast("Password must be at least 6 characters", "error")
+    if (!email || !password) {
+      showToast("Email and password required", "error")
       setLoading(false)
       return
     }
 
     // ======================
-    // SIGNUP FLOW
+    // SIGNUP
     // ======================
     if (!isLogin) {
       if (!name.trim()) {
@@ -91,46 +76,36 @@ export default function Auth() {
         email,
         password,
         options: {
-          data: { full_name: name },
+          data: {
+            full_name: name,
+            first_time_welcome: true, // ✅ important
+          },
         },
       })
 
       if (error) {
-        if (error.message.includes("already registered")) {
-          showToast("Email already exists. Please login.", "error")
-        } else {
-          showToast(error.message, "error")
-        }
+        showToast(error.message, "error")
         setLoading(false)
         return
       }
 
-      // Auto login after signup
-      const { error: loginError } =
-        await supabase.auth.signInWithPassword({
-          email,
-          password,
-        })
+      await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
 
-      if (!loginError) {
-        showToast("Signup successful! Redirecting...", "success")
-        navigate("/dashboard")
-      } else {
-        showToast(loginError.message, "error")
-      }
-
+      navigate("/app") // ✅ FIXED
       setLoading(false)
       return
     }
 
     // ======================
-    // LOGIN FLOW
+    // LOGIN
     // ======================
-    const { error: loginError } =
-      await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+    const { error: loginError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
 
     if (loginError) {
       showToast(loginError.message, "error")
@@ -148,7 +123,7 @@ export default function Auth() {
       localStorage.removeItem("rememberMe")
     }
 
-    navigate("/dashboard")
+    navigate("/app") // ✅ FIXED
     setLoading(false)
   }
 
@@ -157,9 +132,7 @@ export default function Auth() {
       <Toast
         message={toast.message}
         type={toast.type}
-        onClose={() =>
-          setToast({ message: "", type: "success" })
-        }
+        onClose={() => setToast({ message: "", type: "success" })}
       />
 
       <div className="bg-white p-8 rounded-3xl shadow-2xl w-96">
@@ -192,15 +165,11 @@ export default function Auth() {
               placeholder="Password"
               className="w-full p-2 border rounded"
               value={password}
-              onChange={(e) =>
-                setPassword(e.target.value)
-              }
+              onChange={(e) => setPassword(e.target.value)}
             />
             <span
-              className="absolute right-3 top-2 cursor-pointer text-sm text-gray-500"
-              onClick={() =>
-                setShowPassword(!showPassword)
-              }
+              className="absolute right-3 top-2 cursor-pointer text-sm"
+              onClick={() => setShowPassword(!showPassword)}
             >
               {showPassword ? "🙈" : "👁️"}
             </span>
@@ -208,13 +177,11 @@ export default function Auth() {
 
           {!isLogin && (
             <input
-              type={showPassword ? "text" : "password"}
+              type="password"
               placeholder="Re-enter Password"
               className="w-full p-2 border rounded mb-4"
               value={confirmPassword}
-              onChange={(e) =>
-                setConfirmPassword(e.target.value)
-              }
+              onChange={(e) => setConfirmPassword(e.target.value)}
             />
           )}
 
@@ -223,21 +190,17 @@ export default function Auth() {
               <input
                 type="checkbox"
                 checked={rememberMe}
-                onChange={(e) =>
-                  setRememberMe(e.target.checked)
-                }
+                onChange={(e) => setRememberMe(e.target.checked)}
                 className="mr-2"
               />
-              <label className="text-sm text-gray-700">
-                Remember Me
-              </label>
+              <label className="text-sm">Remember Me</label>
             </div>
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition-colors"
+            className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
           >
             {loading
               ? "Please wait..."
@@ -249,10 +212,7 @@ export default function Auth() {
 
         <div
           className="text-center mt-4 text-blue-500 cursor-pointer"
-          onClick={() => {
-            setIsLogin(!isLogin)
-            setToast({ message: "", type: "success" })
-          }}
+          onClick={() => setIsLogin(!isLogin)}
         >
           Switch to {isLogin ? "Signup" : "Login"}
         </div>
